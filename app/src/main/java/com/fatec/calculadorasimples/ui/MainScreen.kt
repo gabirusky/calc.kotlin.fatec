@@ -51,7 +51,6 @@ import com.fatec.calculadorasimples.ui.theme.CalcOperatorBtn
 import com.fatec.calculadorasimples.ui.theme.CalcOperatorText
 import com.fatec.calculadorasimples.ui.theme.CalculadorafatecTheme
 import com.fatec.calculadorasimples.viewmodel.CalculatorViewModel
-import androidx.compose.foundation.layout.NavigationBarDefaults
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Definição do layout de botões
