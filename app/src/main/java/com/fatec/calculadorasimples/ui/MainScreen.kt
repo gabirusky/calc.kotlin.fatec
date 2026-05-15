@@ -316,7 +316,7 @@ private fun ButtonDef.buttonColors(): Pair<Color, Color> = when (type) {
 fun MainScreenPreview() {
     CalculadorafatecTheme {
         CalculatorContent(
-            state   = CalculatorState(currentInput = "42", expression = ""),
+            state   = CalculatorState(currentInput = "42"),
             onEvent = {}
         )
     }
