@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -265,20 +266,19 @@ fun CalculatorButton(
         label = "buttonScale"
     )
 
+    val buttonShape = if (isWide) RoundedCornerShape(50) else CircleShape
+
     Box(
         modifier = modifier
-            .then(
-                if (isWide) Modifier  // Sem aspectRatio para botão largo
-                else Modifier.aspectRatio(1f)  // Quadrado → círculo perfeito
-            )
+            .aspectRatio(if (isWide) 2f else 1f)  // 2:1 para o "0", 1:1 para os demais
             .scale(scale)
             .shadow(
-                elevation = 4.dp,
-                shape     = if (isWide) CircleShape else CircleShape,
+                elevation     = 4.dp,
+                shape         = buttonShape,
                 ambientColor  = backgroundColor.copy(alpha = 0.3f),
                 spotColor     = backgroundColor.copy(alpha = 0.4f)
             )
-            .clip(CircleShape)
+            .clip(buttonShape)
             .background(backgroundColor)
             .clickable(
                 interactionSource = interactionSource,
