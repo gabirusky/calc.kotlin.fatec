@@ -2,56 +2,56 @@ package com.fatec.calculadorasimples.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 /**
- * Tipografia customizada para a Calculadora FATEC.
+ * Tipografia estilo Matrix — fonte monoespaçada Monospace com peso Bold.
  *
- * - [displayLarge]: visor principal — números grandes, peso leve (estilo iOS Calculator)
+ * - [displayLarge]: visor principal — números grandes em estilo "terminal"
  * - [displayMedium]: expressão acumulada acima do número
- * - [headlineLarge]: fallback para títulos
- * - [labelLarge]: texto dos botões
+ * - [titleLarge]: texto dos botões da calculadora
  */
 val Typography = Typography(
-    // Número principal no visor
+    // Número principal no visor (grande, monoespaçado, Bold)
     displayLarge = TextStyle(
-        fontFamily   = FontFamily.Default,
-        fontWeight   = FontWeight.Light,
-        fontSize     = 72.sp,
-        lineHeight   = 80.sp,
-        letterSpacing = (-2).sp
+        fontFamily    = FontFamily.Monospace,
+        fontWeight    = FontWeight.Bold,
+        fontSize      = 68.sp,
+        lineHeight    = 76.sp,
+        letterSpacing = (-1).sp
     ),
     // Expressão acumulada (ex: "8 ×")
     displayMedium = TextStyle(
-        fontFamily   = FontFamily.Default,
-        fontWeight   = FontWeight.Light,
-        fontSize     = 28.sp,
-        lineHeight   = 36.sp,
-        letterSpacing = (-0.5).sp
+        fontFamily    = FontFamily.Monospace,
+        fontWeight    = FontWeight.Normal,
+        fontSize      = 26.sp,
+        lineHeight    = 34.sp,
+        letterSpacing = 0.sp
     ),
-    // Texto dos botões numéricos
+    // Texto dos botões numéricos e de função
     titleLarge = TextStyle(
-        fontFamily   = FontFamily.Default,
-        fontWeight   = FontWeight.Normal,
-        fontSize     = 32.sp,
-        lineHeight   = 40.sp,
+        fontFamily    = FontFamily.Monospace,
+        fontWeight    = FontWeight.Bold,
+        fontSize      = 28.sp,
+        lineHeight    = 36.sp,
         letterSpacing = 0.sp
     ),
     // Texto dos botões de operador
     headlineMedium = TextStyle(
-        fontFamily   = FontFamily.Default,
-        fontWeight   = FontWeight.Normal,
-        fontSize     = 32.sp,
-        lineHeight   = 40.sp,
+        fontFamily    = FontFamily.Monospace,
+        fontWeight    = FontWeight.Bold,
+        fontSize      = 28.sp,
+        lineHeight    = 36.sp,
         letterSpacing = 0.sp
     ),
     bodyLarge = TextStyle(
-        fontFamily   = FontFamily.Default,
-        fontWeight   = FontWeight.Normal,
-        fontSize     = 16.sp,
-        lineHeight   = 24.sp,
+        fontFamily    = FontFamily.Monospace,
+        fontWeight    = FontWeight.Normal,
+        fontSize      = 16.sp,
+        lineHeight    = 24.sp,
         letterSpacing = 0.5.sp
     )
 )
