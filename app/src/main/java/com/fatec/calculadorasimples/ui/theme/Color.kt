@@ -29,7 +29,6 @@ val CalcEqualsText      = Color(0xFF000000)  // Preto no botão =
 // ── Borda/Glow dos botões ─────────────────────────────────────────────────────
 val MatrixGreen         = Color(0xFF00FF41)
 val MatrixGreenDim      = Color(0xFF00CC33)
-val MatrixGreenGlow     = Color(0xFF39FF14)
 
 // ── Compatibilidade com Material3 ────────────────────────────────────────────
 val Primary             = Color(0xFF00FF41)

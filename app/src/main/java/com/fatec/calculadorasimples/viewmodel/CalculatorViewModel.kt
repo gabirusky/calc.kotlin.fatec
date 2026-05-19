@@ -1,7 +1,6 @@
 package com.fatec.calculadorasimples.viewmodel
 
 import androidx.lifecycle.ViewModel
-import com.fatec.calculadorasimples.model.Calculator
 import com.fatec.calculadorasimples.model.CalculatorState
 import com.fatec.calculadorasimples.model.formatDisplay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -10,132 +9,128 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
 /**
- * ViewModel da Calculadora — camada intermediária entre a UI e a lógica de negócio.
+ * ViewModel com acúmulo de expressão.
  *
- * Responsabilidades:
- * - Manter o estado da UI via [StateFlow] (padrão recomendado pelo Google).
- * - Processar eventos do usuário (clique nos botões).
- * - Delegar operações matemáticas ao [Calculator] (Model).
- *
- * A UI (Compose) observa [uiState] e recompõe apenas quando o estado muda.
+ * A expressão "2+2+2+2" é armazenada em tokens e só avaliada ao pressionar "=".
+ * Suporta precedência de operadores (* e / antes de + e -).
  */
 class CalculatorViewModel : ViewModel() {
 
-    // Estado interno mutável — privado para garantir encapsulamento
     private val _uiState = MutableStateFlow(CalculatorState())
-
-    /**
-     * Estado público imutável observado pela UI.
-     * Uso na Composable: `val state by viewModel.uiState.collectAsStateWithLifecycle()`
-     */
     val uiState: StateFlow<CalculatorState> = _uiState.asStateFlow()
 
-    // ─────────────────────────────────────────────
-    // Dispatcher central — ponto de entrada único da UI
-    // ─────────────────────────────────────────────
-
-    /**
-     * Processa o clique de qualquer botão da calculadora.
-     *
-     * @param label O texto do botão pressionado (ex: "7", "+", "=", "C", ".")
-     */
     fun onButtonClick(label: String) {
         when (label) {
-            "C"             -> onClear()
-            "="             -> onEquals()
-            "."             -> onDecimalPoint()
-            "+", "-", "*", "/" -> onOperator(label)
-            else            -> onDigit(label)   // dígitos 0–9
+            "C"                    -> onClear()
+            "="                    -> onEquals()
+            "."                    -> onDecimalPoint()
+            "±"                    -> onToggleSign()
+            "%"                    -> onPercent()
+            "+", "-", "*", "/"     -> onOperator(label)
+            else                   -> onDigit(label)
         }
     }
 
-    // ─────────────────────────────────────────────
-    // Handlers de cada tipo de entrada
-    // ─────────────────────────────────────────────
-
-    /**
-     * Acumula um dígito no número sendo digitado.
-     * Se o visor está mostrando um resultado, começa um novo número.
-     */
     private fun onDigit(digit: String) {
-        _uiState.update { state ->
-            val newInput = when {
-                // Após resultado ou erro, começa do zero
-                state.isResult || state.isError -> digit
-                // Evita múltiplos zeros à esquerda
-                state.currentInput == "0"       -> digit
-                // Limite de 12 dígitos para caber no visor
-                state.currentInput.length >= 12 -> state.currentInput
-                else                             -> state.currentInput + digit
+        _uiState.update { s ->
+            when {
+                s.isError -> CalculatorState(currentInput = digit)
+                s.isResult -> CalculatorState(currentInput = digit)
+                s.waitingForOperand -> s.copy(currentInput = digit, waitingForOperand = false)
+                s.currentInput == "0" -> s.copy(currentInput = digit)
+                s.currentInput.replace("-", "").length >= 12 -> s
+                else -> s.copy(currentInput = s.currentInput + digit)
             }
-            state.copy(currentInput = newInput, isResult = false, isError = false)
         }
     }
 
-    /**
-     * Adiciona ponto decimal ao número atual, se ainda não existir.
-     */
     private fun onDecimalPoint() {
-        _uiState.update { state ->
-            if ("." in state.currentInput) state   // já tem ponto, ignora
-            else state.copy(
-                currentInput = if (state.isResult) "0." else "${state.currentInput}.",
-                isResult = false
-            )
-        }
-    }
-
-    /**
-     * Registra o operador selecionado pelo usuário.
-     * Se já havia um operador pendente, calcula o resultado intermediário antes.
-     */
-    private fun onOperator(op: String) {
-        _uiState.update { state ->
-            val currentValue = state.currentInput.toDoubleOrNull() ?: 0.0
-
-            // Encadeamento: "5 + 3 *" calcula "5 + 3 = 8" antes de armazenar "*"
-            if (state.operator.isNotEmpty() && !state.isResult) {
-                val intermediate = calculate(state.firstOperand, currentValue, state.operator)
-                state.copy(
-                    firstOperand = intermediate ?: state.firstOperand,
-                    operator = op,
-                    currentInput = (intermediate ?: currentValue).formatDisplay(),
-                    isResult = false,
-                    isError = intermediate == null
-                )
-            } else {
-                state.copy(
-                    firstOperand = if (state.isResult) currentValue else currentValue,
-                    operator = op,
-                    currentInput = "0",
+        _uiState.update { s ->
+            when {
+                s.isError -> s
+                s.waitingForOperand || s.isResult -> s.copy(
+                    currentInput = "0.",
+                    tokens = if (s.isResult) emptyList() else s.tokens,
+                    resultExpression = "",
+                    waitingForOperand = false,
                     isResult = false
                 )
+                "." in s.currentInput -> s
+                else -> s.copy(currentInput = s.currentInput + ".")
             }
         }
     }
 
     /**
-     * Calcula o resultado da operação acumulada ao pressionar "=".
+     * Operador: acumula currentInput + operador nos tokens.
+     * - Troca operador se pressionado duas vezes seguidas.
+     * - Após resultado: usa o resultado como primeiro token da nova expressão.
+     */
+    private fun onOperator(op: String) {
+        _uiState.update { s ->
+            if (s.isError) return@update s
+
+            when {
+                // Troca de operador (ex: "5 +" → "5 −")
+                s.waitingForOperand && s.tokens.isNotEmpty() -> {
+                    val newTokens = s.tokens.toMutableList()
+                    newTokens[newTokens.lastIndex] = op
+                    s.copy(tokens = newTokens)
+                }
+                // Após resultado: inicia nova expressão com o resultado
+                s.isResult -> s.copy(
+                    tokens = listOf(s.currentInput, op),
+                    resultExpression = "",
+                    waitingForOperand = true,
+                    isResult = false
+                )
+                // Normal: acumula número + operador
+                else -> s.copy(
+                    tokens = s.tokens + s.currentInput + op,
+                    waitingForOperand = true,
+                    resultExpression = ""
+                )
+            }
+        }
+    }
+
+    /**
+     * Avalia a expressão completa acumulada nos tokens + currentInput.
+     * Respeita precedência: * e / antes de + e -.
      */
     private fun onEquals() {
-        _uiState.update { state ->
-            if (state.operator.isEmpty()) return@update state
+        _uiState.update { s ->
+            if (s.isError) return@update s
+            if (s.tokens.isEmpty()) return@update s
 
-            val secondOperand = state.currentInput.toDoubleOrNull() ?: 0.0
-            val result = calculate(state.firstOperand, secondOperand, state.operator)
+            val fullTokens = if (s.waitingForOperand) {
+                s.tokens + s.currentInput  // "5 + =" → "5 + 5"
+            } else {
+                s.tokens + s.currentInput
+            }
+
+            // Monta expressão de exibição: "2 + 3 × 4 ="
+            val displayExpr = fullTokens.joinToString(" ") { t ->
+                when (t) { "*" -> "×"; "/" -> "÷"; "-" -> "−"; else -> t }
+            } + " ="
+
+            val result = evaluate(fullTokens)
 
             if (result != null) {
-                state.copy(
+                s.copy(
                     currentInput = result.formatDisplay(),
-                    operator = "",
-                    firstOperand = result,
+                    tokens = emptyList(),
+                    resultExpression = displayExpr,
+                    waitingForOperand = false,
                     isResult = true,
                     isError = false
                 )
             } else {
-                state.copy(
+                s.copy(
                     currentInput = "Erro",
-                    operator = "",
+                    tokens = emptyList(),
+                    resultExpression = "",
+                    waitingForOperand = false,
                     isResult = false,
                     isError = true
                 )
@@ -143,33 +138,76 @@ class CalculatorViewModel : ViewModel() {
         }
     }
 
-    /**
-     * Reinicia o estado para o valor inicial (zera tudo).
-     */
+    private fun onToggleSign() {
+        _uiState.update { s ->
+            if (s.isError) return@update s
+            val v = s.currentInput.toDoubleOrNull() ?: return@update s
+            if (v == 0.0) return@update s
+            s.copy(currentInput = (-v).formatDisplay(), isResult = false)
+        }
+    }
+
+    private fun onPercent() {
+        _uiState.update { s ->
+            if (s.isError) return@update s
+            val v = s.currentInput.toDoubleOrNull() ?: return@update s
+            s.copy(currentInput = (v / 100.0).formatDisplay(), waitingForOperand = false, isResult = false)
+        }
+    }
+
     private fun onClear() {
         _uiState.value = CalculatorState()
     }
 
     // ─────────────────────────────────────────────
-    // Utilitários privados
+    // Avaliador de expressão com precedência
     // ─────────────────────────────────────────────
 
     /**
-     * Executa o cálculo usando o [Calculator] (Model).
-     *
-     * @return O resultado como [Double], ou `null` se ocorrer ArithmeticException.
+     * Avalia tokens ["2", "+", "3", "*", "4"] → 14.
+     * Passo 1: resolve * e /. Passo 2: resolve + e -.
      */
-    private fun calculate(a: Double, b: Double, op: String): Double? {
-        return try {
-            when (op) {
-                "+" -> Calculator.add(a, b)
-                "-" -> Calculator.subtract(a, b)
-                "*" -> Calculator.multiply(a, b)
-                "/" -> Calculator.divide(a, b)
-                else -> b
+    private fun evaluate(parts: List<String>): Double? {
+        if (parts.isEmpty() || parts.size % 2 == 0) return null
+
+        val nums = mutableListOf<Double>()
+        val ops = mutableListOf<String>()
+
+        for (i in parts.indices) {
+            if (i % 2 == 0) {
+                nums.add(parts[i].toDoubleOrNull() ?: return null)
+            } else {
+                ops.add(parts[i])
             }
-        } catch (e: ArithmeticException) {
-            null   // null indica erro (divisão por zero)
         }
+
+        // Passo 1: * e /
+        var i = 0
+        while (i < ops.size) {
+            when (ops[i]) {
+                "*" -> {
+                    nums[i] = nums[i] * nums[i + 1]
+                    nums.removeAt(i + 1); ops.removeAt(i)
+                }
+                "/" -> {
+                    if (nums[i + 1] == 0.0) return null
+                    nums[i] = nums[i] / nums[i + 1]
+                    nums.removeAt(i + 1); ops.removeAt(i)
+                }
+                else -> i++
+            }
+        }
+
+        // Passo 2: + e -
+        var result = nums[0]
+        for (j in ops.indices) {
+            result = when (ops[j]) {
+                "+" -> result + nums[j + 1]
+                "-" -> result - nums[j + 1]
+                else -> return null
+            }
+        }
+
+        return result
     }
 }

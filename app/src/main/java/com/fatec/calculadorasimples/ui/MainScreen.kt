@@ -1,11 +1,6 @@
 package com.fatec.calculadorasimples.ui
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -30,7 +25,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -38,10 +32,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
@@ -72,10 +66,22 @@ import com.fatec.calculadorasimples.ui.theme.MatrixGreen
 import com.fatec.calculadorasimples.ui.theme.MatrixGreenDim
 import com.fatec.calculadorasimples.viewmodel.CalculatorViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlin.random.Random
 
+// Constantes do rain — conservadoras para performance
+private const val RAIN_CHARS   = "01234789ACEF@#%"
+private const val RAIN_COL_GAP = 32f   // espaçamento largo = menos colunas
+private const val RAIN_CHAR_H  = 18f
+private const val RAIN_DELAY   = 80L   // ~12fps (leve)
+
+private class RainCol(
+    val x: Float, var y: Float, var speed: Float,
+    val chars: CharArray, val len: Int
+)
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Definição do layout de botões
+// Layout de botões
 // ─────────────────────────────────────────────────────────────────────────────
 private enum class BtnType { FUNC, NUMERIC, OPERATOR, EQUALS }
 
@@ -119,100 +125,76 @@ private val buttonRows = listOf(
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dados de cada "coluna" da Matrix Rain
-// ─────────────────────────────────────────────────────────────────────────────
-private data class RainColumn(
-    val x: Float,
-    var y: Float,
-    val speed: Float,
-    val chars: MutableList<Char>,
-    val length: Int
-)
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Tela principal (stateful)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Tela principal da Calculadora.
- * Padrão MVVM: coleta o estado do [viewModel] e repassa para [CalculatorContent].
- */
 @Composable
-fun MainScreen(
-    viewModel: CalculatorViewModel = viewModel()
-) {
+fun MainScreen(viewModel: CalculatorViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-
-    CalculatorContent(
-        state   = uiState,
-        onEvent = viewModel::onButtonClick
-    )
+    CalculatorContent(state = uiState, onEvent = viewModel::onButtonClick)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Conteúdo da tela (stateless)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Composable stateless que renderiza o layout completo da calculadora Matrix.
- */
 @Composable
 fun CalculatorContent(
     state: CalculatorState,
     onEvent: (String) -> Unit
 ) {
-    Scaffold(
-        containerColor = CalcBackground
-    ) { innerPadding ->
+    Scaffold(containerColor = CalcBackground) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 .background(CalcBackground)
         ) {
-            // ── Fundo animado Matrix Rain ─────────────────────────────────
-            MatrixRainBackground()
+            // Camada 1: rain atrás de tudo
+            MatrixRain()
 
-            // ── Conteúdo da calculadora sobre o fundo ──────────────────────
+            // Camada 2: conteúdo com overlay semitransparente
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0x88000000)), // overlay escuro semitransparente
-                verticalArrangement = Arrangement.Bottom
+                    .background(Color(0xCC0A0F0A)),  // 80% opaco → rain sutil por baixo
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
-                // ── Visor ─────────────────────────────────────────────────
-                DisplaySection(
-                    expression   = state.expression,
-                    currentInput = state.currentInput,
-                    isError      = state.isError
-                )
+                TitleSection()
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Column {
+                    DisplaySection(
+                        expression   = state.expression,
+                        currentInput = state.currentInput,
+                        isError      = state.isError
+                    )
 
-                // ── Grid de botões ─────────────────────────────────────────
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp)
-                        .padding(bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    for (row in buttonRows) {
-                        Row(
-                            modifier              = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            for (btn in row) {
-                                val (bg, fg) = btn.buttonColors()
-                                CalculatorButton(
-                                    label           = btn.display,
-                                    backgroundColor = bg,
-                                    textColor       = fg,
-                                    modifier        = Modifier.weight(btn.weight),
-                                    isWide          = btn.weight > 1f,
-                                    isEquals        = btn.type == BtnType.EQUALS,
-                                    onClick         = { onEvent(btn.action) }
-                                )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        for (row in buttonRows) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                for (btn in row) {
+                                    val (bg, fg) = btn.buttonColors()
+                                    CalculatorButton(
+                                        label           = btn.display,
+                                        backgroundColor = bg,
+                                        textColor       = fg,
+                                        modifier        = Modifier.weight(btn.weight),
+                                        isWide          = btn.weight > 1f,
+                                        isEquals        = btn.type == BtnType.EQUALS,
+                                        onClick         = { onEvent(btn.action) }
+                                    )
+                                }
                             }
                         }
                     }
@@ -223,141 +205,128 @@ fun CalculatorContent(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Matrix Rain Background — API Compose nativa (sem nativeCanvas)
+// Matrix Rain — otimizado com cache de TextLayoutResult
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Renderiza o efeito "Matrix rain" como fundo animado usando drawText do Compose.
- * Usa [TextMeasurer] para medir e desenhar cada caractere com cor/opacidade variável,
- * sem depender de nenhuma API nativa do Android.
- */
 @Composable
-private fun MatrixRainBackground() {
-    val matrixChars = remember {
-        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ@#\$%&"
+private fun MatrixRain() {
+    val measurer = rememberTextMeasurer()
+    val style = remember { TextStyle(fontSize = 12.sp, fontFamily = FontFamily.Monospace) }
+    val cache = remember(measurer) {
+        RAIN_CHARS.toSet().associateWith { measurer.measure(it.toString(), style) }
     }
 
-    val textMeasurer = rememberTextMeasurer()
-    val columns      = remember { mutableStateListOf<RainColumn>() }
-    var canvasWidth  by remember { mutableStateOf(0f) }
-    var canvasHeight by remember { mutableStateOf(0f) }
+    val cols = remember { mutableListOf<RainCol>() }
+    var w by remember { mutableStateOf(0f) }
+    var h by remember { mutableStateOf(0f) }
+    var tick by remember { mutableStateOf(0) }
 
-    val charFontSize = 14.sp
-    val charSizePx   = 20f   // altura aproximada em pixels para espaçamento
-    val colSpacing   = 22f
-
-    // Inicializa colunas quando as dimensões do canvas ficarem disponíveis
-    LaunchedEffect(canvasWidth, canvasHeight) {
-        if (canvasWidth <= 0f || canvasHeight <= 0f) return@LaunchedEffect
-        if (columns.isNotEmpty()) return@LaunchedEffect
-
-        val numCols = (canvasWidth / colSpacing).toInt().coerceAtLeast(1)
-        repeat(numCols) { i ->
-            val length = Random.nextInt(8, 22)
-            columns.add(
-                RainColumn(
-                    x      = i * colSpacing,
-                    y      = Random.nextFloat() * canvasHeight,
-                    speed  = Random.nextFloat() * 4f + 2f,
-                    chars  = MutableList(length) { matrixChars.random() },
-                    length = length
-                )
+    LaunchedEffect(w, h) {
+        if (w <= 0f || h <= 0f || cols.isNotEmpty()) return@LaunchedEffect
+        val n = (w / RAIN_COL_GAP).toInt().coerceAtLeast(1)
+        repeat(n) { i ->
+            val len = Random.nextInt(4, 10)
+            cols += RainCol(
+                x = i * RAIN_COL_GAP, y = Random.nextFloat() * h,
+                speed = Random.nextFloat() * 2f + 1f,
+                chars = CharArray(len) { RAIN_CHARS.random() }, len = len
             )
         }
     }
 
-    // Loop de animação — avança colunas e troca caracteres aleatoriamente
-    LaunchedEffect(columns.size) {
-        if (columns.isEmpty()) return@LaunchedEffect
-        while (true) {
-            delay(60L)
-            columns.forEachIndexed { idx, col ->
-                col.y += col.speed
-                if (col.y > canvasHeight + col.length * charSizePx) {
-                    columns[idx] = col.copy(
-                        y     = -(col.length * charSizePx),
-                        speed = Random.nextFloat() * 4f + 2f,
-                        chars = MutableList(col.length) { matrixChars.random() }
+    LaunchedEffect(Unit) {
+        var t = 0
+        while (isActive) {
+            delay(RAIN_DELAY)
+            cols.forEachIndexed { i, c ->
+                c.y += c.speed
+                if (t and 7 == 0) c.chars[Random.nextInt(c.chars.size)] = RAIN_CHARS.random()
+                if (c.y > h + c.len * RAIN_CHAR_H) {
+                    val len = Random.nextInt(4, 10)
+                    cols[i] = RainCol(
+                        x = c.x, y = -(len * RAIN_CHAR_H),
+                        speed = Random.nextFloat() * 2f + 1f,
+                        chars = CharArray(len) { RAIN_CHARS.random() }, len = len
                     )
                 }
-                // Aleatoriza um caractere do rastro a cada tick
-                if (col.chars.isNotEmpty()) {
-                    col.chars[Random.nextInt(col.chars.size)] = matrixChars.random()
-                }
             }
+            tick = ++t
         }
     }
 
-    Canvas(modifier = Modifier.fillMaxSize()) {
-        // Captura dimensões na primeira composição
-        if (canvasWidth != size.width || canvasHeight != size.height) {
-            canvasWidth  = size.width
-            canvasHeight = size.height
-        }
+    @Suppress("UNUSED_EXPRESSION") tick
 
-        columns.forEach { col ->
-            col.chars.forEachIndexed { i, ch ->
-                val charY = col.y - i * charSizePx
-                if (charY < -charSizePx || charY > size.height) return@forEachIndexed
-
-                // Head branco brilhante → rastro verde com opacidade decrescente
-                val alpha = if (i == 0) 1f else ((1f - i.toFloat() / col.length) * 0.6f).coerceAtLeast(0f)
-                val color = if (i == 0) Color.White.copy(alpha = alpha)
-                            else        Color(0xFF00FF41).copy(alpha = alpha)
-
-                val measured = textMeasurer.measure(
-                    text  = ch.toString(),
-                    style = TextStyle(
-                        color      = color,
-                        fontSize   = charFontSize,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Normal
-                    )
-                )
-                drawText(
-                    textLayoutResult = measured,
-                    topLeft          = Offset(col.x, charY)
-                )
+    Canvas(
+        modifier = Modifier.fillMaxSize().onSizeChanged { w = it.width.toFloat(); h = it.height.toFloat() }
+    ) {
+        val green = Color(0xFF00FF41)
+        cols.forEach { c ->
+            c.chars.forEachIndexed { i, ch ->
+                val cy = c.y - i * RAIN_CHAR_H
+                if (cy < -RAIN_CHAR_H || cy > size.height) return@forEachIndexed
+                val a = if (i == 0) 0.9f else ((1f - i.toFloat() / c.len) * 0.4f)
+                if (a < 0.05f) return@forEachIndexed
+                cache[ch]?.let { drawText(it, color = if (i == 0) Color.White else green, topLeft = Offset(c.x, cy), alpha = a) }
             }
         }
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Visor
+// Título — ocupa o espaço vazio superior
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Seção de visor com efeito Matrix:
- * - Brilho pulsante no texto principal
- * - Cursor terminal piscante
- * - Bordas neon verdes
- */
+@Composable
+private fun TitleSection() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 32.dp, bottom = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text       = "Calculadora Kotlin",
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize   = 30.sp,
+            color      = MatrixGreen,
+            letterSpacing = 2.sp
+        )
+        // Linha decorativa verde abaixo do título
+        Spacer(modifier = Modifier.height(8.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.5f)
+                .height(1.dp)
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            MatrixGreen.copy(alpha = 0.6f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Visor com estilo Matrix
+// ─────────────────────────────────────────────────────────────────────────────
+
 @Composable
 private fun DisplaySection(
     expression: String,
     currentInput: String,
     isError: Boolean
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "displayGlow")
-    val glowAlpha by infiniteTransition.animateFloat(
-        initialValue  = 0.7f,
-        targetValue   = 1f,
-        animationSpec = infiniteRepeatable(
-            animation  = tween(durationMillis = 1200, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "glowAlpha"
-    )
-
-    val displayColor = if (isError) Color(0xFFFF0040) else CalcDisplayText.copy(alpha = glowAlpha)
-
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(Color(0xFF050F05), CalcDisplayBg)
+                Brush.verticalGradient(
+                    colors = listOf(CalcBackground, CalcDisplayBg)
                 )
             )
             .border(
@@ -365,7 +334,7 @@ private fun DisplaySection(
                 brush = Brush.horizontalGradient(
                     colors = listOf(
                         Color.Transparent,
-                        MatrixGreen.copy(alpha = 0.5f),
+                        MatrixGreen.copy(alpha = 0.35f),
                         Color.Transparent
                     )
                 ),
@@ -374,85 +343,52 @@ private fun DisplaySection(
             .padding(horizontal = 24.dp, vertical = 20.dp)
     ) {
         Column(
-            modifier            = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.End
         ) {
-            // Expressão acumulada (ex: "12 ×")
+            // Expressão acumulada
             Text(
                 text       = expression,
                 fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Normal,
                 fontSize   = 24.sp,
-                color      = CalcDisplaySubText.copy(alpha = 0.8f),
+                color      = CalcDisplaySubText.copy(alpha = 0.7f),
                 maxLines   = 1,
                 overflow   = TextOverflow.Ellipsis
             )
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Número principal com brilho pulsante
+            // Número principal
             Text(
                 text       = if (isError) "[ ERRO ]" else currentInput,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
-                fontSize   = 64.sp,
-                lineHeight = 72.sp,
-                color      = displayColor,
+                fontSize   = 56.sp,
+                color      = if (isError) Color(0xFFFF0040) else CalcDisplayText,
                 maxLines   = 1,
                 overflow   = TextOverflow.Ellipsis,
                 textAlign  = TextAlign.End,
                 modifier   = Modifier.fillMaxWidth()
             )
 
-            // Cursor piscante estilo terminal
-            MatrixCursor()
+            // Cursor estático verde
+            Text(
+                text       = "_",
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize   = 20.sp,
+                color      = MatrixGreen.copy(alpha = 0.6f),
+                modifier   = Modifier.fillMaxWidth().padding(top = 2.dp),
+                textAlign  = TextAlign.End
+            )
         }
     }
 }
 
-/**
- * Cursor piscante estilo terminal Matrix ( _ ).
- */
-@Composable
-private fun MatrixCursor() {
-    val infiniteTransition = rememberInfiniteTransition(label = "cursor")
-    val cursorAlpha by infiniteTransition.animateFloat(
-        initialValue  = 1f,
-        targetValue   = 0f,
-        animationSpec = infiniteRepeatable(
-            animation  = tween(durationMillis = 600, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "cursorAlpha"
-    )
-    Text(
-        text       = "_",
-        fontFamily = FontFamily.Monospace,
-        fontWeight = FontWeight.Bold,
-        fontSize   = 24.sp,
-        color      = MatrixGreen.copy(alpha = cursorAlpha),
-        modifier   = Modifier
-            .fillMaxWidth()
-            .padding(top = 2.dp),
-        textAlign  = TextAlign.End
-    )
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Botão da calculadora — estilo Matrix
+// Botão com estilo Matrix — borda neon + escala
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Botão Matrix com borda neon, glow ao pressionar e animação de escala.
- *
- * @param label           Texto exibido.
- * @param backgroundColor Cor de fundo do botão.
- * @param textColor       Cor do texto.
- * @param modifier        Modifier externo.
- * @param isWide          Botão de largura dupla (botão "0").
- * @param isEquals        Se é o botão "=" (recebe destaque especial).
- * @param onClick         Callback de clique.
- */
 @Composable
 fun CalculatorButton(
     label: String,
@@ -467,50 +403,30 @@ fun CalculatorButton(
     val isPressed by interactionSource.collectIsPressedAsState()
 
     val scale by animateFloatAsState(
-        targetValue   = if (isPressed) 0.90f else 1f,
-        animationSpec = tween(durationMillis = 80),
-        label         = "buttonScale"
+        targetValue   = if (isPressed) 0.92f else 1f,
+        animationSpec = tween(durationMillis = 100),
+        label         = "btnScale"
     )
 
-    val glowIntensity by animateFloatAsState(
-        targetValue   = if (isPressed) 1f else 0f,
-        animationSpec = tween(durationMillis = 120),
-        label         = "buttonGlow"
-    )
-
-    val buttonShape = if (isWide) RoundedCornerShape(50) else CircleShape
-
-    val borderColor = when {
-        isEquals  -> MatrixGreen
-        isPressed -> Color(0xFF39FF14)
-        else      -> MatrixGreenDim.copy(alpha = 0.7f)
+    val buttonShape = remember(isWide) {
+        if (isWide) RoundedCornerShape(50) else CircleShape
     }
 
-    val bgBrush = if (isEquals) {
-        Brush.radialGradient(colors = listOf(Color(0xFF00CC33), Color(0xFF007A1F)))
-    } else {
-        Brush.radialGradient(
-            colors = listOf(
-                backgroundColor.copy(alpha = 0.9f),
-                backgroundColor.copy(alpha = 0.6f)
-            )
-        )
+    // Borda: "=" sempre verde brilhante; pressionado = verde claro; padrão = verde dim
+    val borderColor = when {
+        isEquals  -> MatrixGreen
+        isPressed -> MatrixGreen.copy(alpha = 0.8f)
+        else      -> MatrixGreenDim.copy(alpha = 0.4f)
     }
 
     Box(
         modifier = modifier
             .aspectRatio(if (isWide) 2f else 1f)
             .scale(scale)
-            .shadow(
-                elevation    = if (isPressed) 12.dp else 4.dp,
-                shape        = buttonShape,
-                ambientColor = MatrixGreen.copy(alpha = 0.3f + glowIntensity * 0.4f),
-                spotColor    = MatrixGreen.copy(alpha = 0.5f + glowIntensity * 0.5f)
-            )
             .clip(buttonShape)
-            .background(brush = bgBrush)
+            .background(backgroundColor)
             .border(
-                width = if (isEquals || isPressed) 2.dp else 1.dp,
+                width = if (isEquals) 2.dp else 1.dp,
                 color = borderColor,
                 shape = buttonShape
             )
@@ -525,7 +441,7 @@ fun CalculatorButton(
             text       = label,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
-            fontSize   = if (isEquals) 32.sp else 26.sp,
+            fontSize   = if (isEquals) 30.sp else 24.sp,
             color      = if (isPressed) Color.White else textColor
         )
     }
@@ -535,12 +451,11 @@ fun CalculatorButton(
 // Utilitários
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Retorna o par (backgroundColor, textColor) conforme o tipo do botão. */
 private fun ButtonDef.buttonColors(): Pair<Color, Color> = when (type) {
-    BtnType.FUNC     -> Pair(CalcFuncBtn,     CalcFuncText)
-    BtnType.NUMERIC  -> Pair(CalcNumericBtn,  CalcNumericText)
-    BtnType.OPERATOR -> Pair(CalcOperatorBtn, CalcOperatorText)
-    BtnType.EQUALS   -> Pair(CalcEqualsBtn,   CalcEqualsText)
+    BtnType.FUNC     -> CalcFuncBtn     to CalcFuncText
+    BtnType.NUMERIC  -> CalcNumericBtn  to CalcNumericText
+    BtnType.OPERATOR -> CalcOperatorBtn to CalcOperatorText
+    BtnType.EQUALS   -> CalcEqualsBtn   to CalcEqualsText
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -551,20 +466,6 @@ private fun ButtonDef.buttonColors(): Pair<Color, Color> = when (type) {
 @Composable
 fun MainScreenPreview() {
     CalculadorafatecTheme {
-        CalculatorContent(
-            state   = CalculatorState(currentInput = "1984"),
-            onEvent = {}
-        )
-    }
-}
-
-@Preview(showBackground = true, backgroundColor = 0xFF0A0F0A)
-@Composable
-fun MainScreenErrorPreview() {
-    CalculadorafatecTheme {
-        CalculatorContent(
-            state   = CalculatorState(currentInput = "Erro", isError = true),
-            onEvent = {}
-        )
+        CalculatorContent(state = CalculatorState(currentInput = "1984"), onEvent = {})
     }
 }
