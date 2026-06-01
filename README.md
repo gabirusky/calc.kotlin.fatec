@@ -54,9 +54,9 @@ Kotlin é a linguagem oficial do Google para desenvolvimento Android desde 2017.
 ### Desvantagens
 
 - ❌ Curva de aprendizado com paradigma declarativo (Compose)
-- ❌ Compose ainda tem menos bibliotecas de terceiros que XML
-- ❌ Builds podem ser mais lentos que projetos menores em XML
-- ❌ Exclusivo para Android (não cross-platform como Flutter/RN)
+- ❌ Integração com código legado XML, requer esforço extra de migração
+- ❌ Recomposições ineficientes podem impactar performance em runtime
+- ❌ Web ainda em Beta; integrações profundas com APIs nativas de cada plataforma ainda exigem código específico
 
 ### Exemplos de Aplicativos Reais
 
